@@ -1,9 +1,27 @@
 import './App.css'
 import { useCurrentPosition } from './hooks/useCurrentPosition'
 import { MapView } from './components/MapView'
+import { useEffect, useState } from 'react'
+import { getNearbyGaugeReadings } from './services/usgs'
+import type { GaugeReading } from './services/usgs'
 
 function App() {
   const { pos, error } = useCurrentPosition()
+  const [gauges, setGauges] = useState<GaugeReading[] | null>(null)
+  const [loadingGauges, setLoadingGauges] = useState(false)
+
+  // fetch gauges when position available
+  useEffect(() => {
+    if (!pos) return
+    setLoadingGauges(true)
+    getNearbyGaugeReadings(pos.lat, pos.lon)
+      .then(setGauges)
+      .catch((e) => {
+        console.error(e)
+        setGauges([])
+      })
+      .finally(() => setLoadingGauges(false))
+  }, [pos])
 
   return (
     <div className="App">
@@ -15,7 +33,14 @@ function App() {
           <p>
             Your position: {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}
           </p>
-          <MapView center={pos} />
+          {loadingGauges && <p>Loading nearby gauges…</p>}
+          {gauges && (
+            <p>
+              Found {gauges.length} gauge{gauges.length !== 1 ? 's' : ''} within
+              25 km.
+            </p>
+          )}
+          <MapView center={pos} gauges={gauges ?? []} />
         </>
       )}
     </div>
