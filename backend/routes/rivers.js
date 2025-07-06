@@ -76,7 +76,14 @@ router.get('/nearby/:lat/:lng/:radius', async (req, res) => {
         return null;
       }
     }).filter(river => river !== null);
-    res.json(rivers);
+    
+    // Remove duplicate rivers based on ID
+    const uniqueRivers = rivers.filter((river, index, self) => 
+      index === self.findIndex(r => r.id === river.id)
+    );
+    
+    console.log(`[USGS] Found ${rivers.length} stations, ${uniqueRivers.length} unique rivers`);
+    res.json(uniqueRivers);
   } catch (error) {
     if (error.response) {
       console.error('[USGS] API error:', error.response.status, error.response.data);

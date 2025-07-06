@@ -52,14 +52,14 @@ const MapUpdater: React.FC<{ center: [number, number] }> = ({ center }) => {
 const RiverMarkers: React.FC<{ rivers: any[], floodPredictions: any[] }> = ({ rivers, floodPredictions }) => {
   return (
     <>
-      {rivers.map((river) => {
+      {rivers.map((river, index) => {
         const prediction = floodPredictions.find(p => p.riverId === river.id);
         const riskLevel = prediction?.riskLevel || 'default';
         const icon = createCustomIcon(riskLevel);
         
         return (
           <Marker
-            key={river.id}
+            key={`${river.id}-${index}`}
             position={[river.location.lat, river.location.lng]}
             icon={icon}
           >
@@ -239,11 +239,11 @@ const MapView: React.FC = () => {
         <div className="mt-6">
           <h3 className="text-lg font-semibold mb-3">Rivers in Range ({rivers.length})</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rivers.map((river) => {
+            {rivers.map((river, index) => {
               const prediction = floodPredictions.find(p => p.riverId === river.id);
               
               return (
-                <div key={river.id} className="bg-white rounded-lg shadow-md p-4">
+                <div key={`${river.id}-${index}`} className="bg-white rounded-lg shadow-md p-4">
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="font-semibold text-sm">{river.name}</h4>
                     {prediction && (

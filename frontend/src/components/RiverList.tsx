@@ -104,11 +104,11 @@ const RiverList: React.FC<RiverListProps> = ({ rivers, floodPredictions, loading
       </h2>
       
       <div className="space-y-4">
-        {rivers.map((river) => {
+        {rivers.map((river, index) => {
           const prediction = floodPredictions.find(p => p.riverId === river.id);
           
           return (
-            <div key={river.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div key={`${river.id}-${index}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
                   <h3 className="font-semibold text-lg text-gray-900">{river.name}</h3>
