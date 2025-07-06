@@ -3,14 +3,18 @@
  * Docs: https://waterservices.usgs.gov/
  */
 
+export type GaugeTrend = 'rising' | 'falling' | 'steady' | 'unknown'
+
 export interface GaugeReading {
   siteId: string
   name: string
   lat: number
   lon: number
-  gageHeight: number | null // in ft or m (unit indicated in `unit`)
+  gageHeight: number | null // latest value
   unit: string
   timestamp: string
+  delta: number | null // change over the period (latest - earliest)
+  trend: GaugeTrend
 }
 
 /**
@@ -101,17 +105,47 @@ export async function getNearbyGaugeReadings(
 
   const out: GaugeReading[] = tsArray.map((ts) => {
     const site = ts.sourceInfo
-    const latestValueArr = ts.values?.[0]?.value
-    const latest = latestValueArr?.[latestValueArr.length - 1]
+    const valueArr = ts.values?.[0]?.value as USGSValue[] | undefined
+    if (!valueArr || valueArr.length === 0) {
+      return {
+        siteId: site.siteCode[0].value,
+        name: site.siteName,
+        lat: site.geoLocation.geogLocation.latitude,
+        lon: site.geoLocation.geogLocation.longitude,
+        gageHeight: null,
+        unit: ts.variable.unit.unitCode,
+        timestamp: '',
+        delta: null,
+        trend: 'unknown',
+      }
+    }
+
+    const latest = valueArr[valueArr.length - 1]
+    const earliest = valueArr[0]
+    const latestNum = parseFloat(latest.value)
+    const earliestNum = parseFloat(earliest.value)
+    const delta = latestNum - earliestNum
+
+    // classify trend based on delta magnitude
+    let trend: GaugeTrend = 'steady'
+    if (Math.abs(delta) < 0.05) {
+      trend = 'steady'
+    } else if (delta > 0.05) {
+      trend = 'rising'
+    } else if (delta < -0.05) {
+      trend = 'falling'
+    }
 
     return {
       siteId: site.siteCode[0].value,
       name: site.siteName,
       lat: site.geoLocation.geogLocation.latitude,
       lon: site.geoLocation.geogLocation.longitude,
-      gageHeight: latest ? parseFloat(latest.value) : null,
+      gageHeight: latestNum,
       unit: ts.variable.unit.unitCode,
-      timestamp: latest ? latest.dateTime : '',
+      timestamp: latest.dateTime,
+      delta,
+      trend,
     }
   })
 
