@@ -4,12 +4,15 @@ import { MapView } from './components/MapView'
 import { useEffect, useState } from 'react'
 import { getNearbyGaugeReadings } from './services/usgs'
 import type { GaugeReading } from './services/usgs'
+import { useInterval } from './hooks/useInterval'
 
 function App() {
   const { pos, error } = useCurrentPosition()
   const [gauges, setGauges] = useState<GaugeReading[] | null>(null)
   const [loadingGauges, setLoadingGauges] = useState(false)
   const [gaugeError, setGaugeError] = useState<string | null>(null)
+  // Keep simple in-memory history per gauge id (last 12 samples)
+  const [history, setHistory] = useState<Record<string, GaugeReading[]>>({})
 
   // fetch gauges when position available
   useEffect(() => {
@@ -27,6 +30,41 @@ function App() {
       })
       .finally(() => setLoadingGauges(false))
   }, [pos])
+
+  // Poll every 5 minutes (300_000 ms)
+  useInterval(() => {
+    if (!pos) return
+    getNearbyGaugeReadings(pos.lat, pos.lon)
+      .then((list) => {
+        // update gauges state and history
+        setGauges(list)
+        setHistory((prev) => {
+          const next: Record<string, GaugeReading[]> = { ...prev }
+          list.forEach((g) => {
+            const arr = next[g.siteId] ?? []
+            arr.push(g)
+            if (arr.length > 12) arr.shift()
+            next[g.siteId] = arr
+          })
+          return next
+        })
+
+        // simple alert logic – rising more than 0.3 units since previous sample
+        list.forEach((g) => {
+          const prev = history[g.siteId]?.[history[g.siteId].length - 1]
+          if (prev && g.gageHeight !== null && prev.gageHeight !== null) {
+            const diff = g.gageHeight - prev.gageHeight
+            if (diff > 0.3) {
+              // eslint-disable-next-line no-alert
+              alert(
+                `${g.name} is rising quickly (+${diff.toFixed(2)} ${g.unit}). Stay alert.`
+              )
+            }
+          }
+        })
+      })
+      .catch((err) => console.error('poll error', err))
+  }, 300_000)
 
   return (
     <div className="App">
