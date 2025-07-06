@@ -1,6 +1,7 @@
 import './App.css'
 import { useCurrentPosition } from './hooks/useCurrentPosition'
 import { MapView } from './components/MapView'
+import { TrendSparkline } from './components/TrendSparkline'
 import { useEffect, useState, useRef } from 'react'
 import { getNearbyGaugeReadings } from './services/usgs'
 import type { GaugeReading } from './services/usgs'
@@ -137,6 +138,46 @@ function App() {
             <p>No gauges found within 25 km. Try increasing the search radius.</p>
           )}
           <MapView center={pos} gauges={gauges ?? []} />
+
+          {/* List with trends */}
+          {gauges && gauges.length > 0 && (
+            <table className="gauges" style={{ marginTop: '1rem' }}>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Current</th>
+                  <th>Δ</th>
+                  <th>Trend</th>
+                  <th>History</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gauges.map((g) => (
+                  <tr key={g.siteId}>
+                    <td>{g.name}</td>
+                    <td>
+                      {g.gageHeight !== null ? g.gageHeight.toFixed(2) : 'n/a'}{' '}
+                      {g.unit}
+                    </td>
+                    <td>
+                      {g.delta !== null ? g.delta.toFixed(2) : 'n/a'} {g.unit}
+                    </td>
+                    <td>{g.trend}</td>
+                    <td>
+                      {history[g.siteId] && history[g.siteId].length > 1 ? (
+                        <TrendSparkline
+                          data={history[g.siteId]}
+                          color={g.trend === 'rising' ? '#d73027' : g.trend === 'falling' ? '#4575b4' : '#1a9850'}
+                        />
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       )}
     </div>

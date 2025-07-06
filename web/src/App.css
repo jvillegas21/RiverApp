@@ -51,3 +51,19 @@ h1 {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
+
+table.gauges {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.gauges th,
+table.gauges td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ddd;
+}
+
+table.gauges th {
+  background: #f0f0f0;
+  text-align: left;
+}
