@@ -1,7 +1,7 @@
 import './App.css'
 import { useCurrentPosition } from './hooks/useCurrentPosition'
 import { MapView } from './components/MapView'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { getNearbyGaugeReadings } from './services/usgs'
 import type { GaugeReading } from './services/usgs'
 import { useInterval } from './hooks/useInterval'
@@ -11,8 +11,15 @@ function App() {
   const [gauges, setGauges] = useState<GaugeReading[] | null>(null)
   const [loadingGauges, setLoadingGauges] = useState(false)
   const [gaugeError, setGaugeError] = useState<string | null>(null)
-  // Keep simple in-memory history per gauge id (last 12 samples)
+  // Keep in-memory history per gauge id
   const [history, setHistory] = useState<Record<string, GaugeReading[]>>({})
+
+  // Configurable polling interval (minutes) & alert threshold (units)
+  const [pollMinutes, setPollMinutes] = useState(5)
+  const [alertThreshold, setAlertThreshold] = useState(0.3)
+
+  // Track last alert timestamp per gauge to avoid spam (ms epoch)
+  const lastAlertRef = useRef<Record<string, number>>({})
 
   // fetch gauges when position available
   useEffect(() => {
@@ -31,7 +38,7 @@ function App() {
       .finally(() => setLoadingGauges(false))
   }, [pos])
 
-  // Poll every 5 minutes (300_000 ms)
+  // Poll with configurable interval
   useInterval(() => {
     if (!pos) return
     getNearbyGaugeReadings(pos.lat, pos.lon)
@@ -54,17 +61,32 @@ function App() {
           const prev = history[g.siteId]?.[history[g.siteId].length - 1]
           if (prev && g.gageHeight !== null && prev.gageHeight !== null) {
             const diff = g.gageHeight - prev.gageHeight
-            if (diff > 0.3) {
-              // eslint-disable-next-line no-alert
-              alert(
-                `${g.name} is rising quickly (+${diff.toFixed(2)} ${g.unit}). Stay alert.`
-              )
+            if (diff > alertThreshold) {
+              const now = Date.now()
+              const last = lastAlertRef.current[g.siteId] ?? 0
+              if (now - last > pollMinutes * 60_000) {
+                lastAlertRef.current[g.siteId] = now
+                const msg = `${g.name} rising +${diff.toFixed(2)} ${g.unit}`
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('Flood Alert', { body: msg })
+                } else {
+                  // eslint-disable-next-line no-alert
+                  alert(msg)
+                }
+              }
             }
           }
         })
       })
       .catch((err) => console.error('poll error', err))
-  }, 300_000)
+  }, pollMinutes * 60_000)
+
+  // Ask notification permission once
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
 
   return (
     <div className="App">
@@ -76,6 +98,33 @@ function App() {
           <p>
             Your position: {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}
           </p>
+          {/* Config panel */}
+          <div style={{ marginBottom: '1rem' }}>
+            <label>
+              Poll every{' '}
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={pollMinutes}
+                onChange={(e) => setPollMinutes(Number(e.target.value) || 1)}
+                style={{ width: '4rem' }}
+              />{' '}
+              minutes
+            </label>{' '}
+            <label style={{ marginLeft: '1rem' }}>
+              Alert threshold{' '}
+              <input
+                type="number"
+                step={0.1}
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(Number(e.target.value))}
+                style={{ width: '4rem' }}
+              />{' '}
+              units
+            </label>
+          </div>
+
           {loadingGauges && <p>Loading nearby gauges…</p>}
           {gaugeError && <p style={{ color: 'red' }}>Gauge error: {gaugeError}</p>}
           {gauges && gauges.length > 0 && (
