@@ -1,0 +1,40 @@
+{
+  "name": "flood-monitor-app",
+  "version": "1.0.0",
+  "description": "Real-time flood monitoring web application using geolocation and water level APIs",
+  "main": "server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server.js",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "start": "node server.js",
+    "install-client": "cd client && npm install",
+    "heroku-postbuild": "npm run install-client && npm run build"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "axios": "^1.6.2",
+    "node-cron": "^3.0.3",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "flood",
+    "monitoring",
+    "water-level",
+    "geolocation",
+    "emergency",
+    "safety"
+  ],
+  "author": "Flood Monitor Team",
+  "license": "MIT"
+}
