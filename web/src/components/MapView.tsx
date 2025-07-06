@@ -3,54 +3,50 @@ import L from 'leaflet'
 import type { Position } from '../hooks/useCurrentPosition'
 import type { GaugeReading, GaugeTrend } from '../services/usgs'
 
-interface MapViewProps {
+interface Props {
   center: Position
-  gauges?: GaugeReading[]
+  gauges: GaugeReading[]
 }
 
 /**
  * MapView renders a Leaflet map centered at the provided coordinates with a marker.
  */
-export function MapView({ center, gauges = [] }: MapViewProps) {
-  const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstance = useRef<L.Map | null>(null)
-  const markerRef = useRef<L.Marker | null>(null)
+export function MapView({ center, gauges }: Props) {
+  const divRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const userMarkerRef = useRef<L.Marker | null>(null)
   const gaugeLayerRef = useRef<L.LayerGroup | null>(null)
 
-  // initialize map
+  // initialise map once
   useEffect(() => {
-    if (mapRef.current && !mapInstance.current) {
-      mapInstance.current = L.map(mapRef.current).setView(
-        [center.lat, center.lon],
-        13
-      )
+    if (!divRef.current || mapRef.current) return
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(mapInstance.current)
+    mapRef.current = L.map(divRef.current).setView([center.lat, center.lon], 12)
 
-      markerRef.current = L.marker([center.lat, center.lon], {
-        title: 'You are here',
-      }).addTo(mapInstance.current)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(mapRef.current)
 
-      gaugeLayerRef.current = L.layerGroup().addTo(mapInstance.current)
-    }
+    userMarkerRef.current = L.marker([center.lat, center.lon], {
+      title: 'Your location',
+    }).addTo(mapRef.current)
+
+    gaugeLayerRef.current = L.layerGroup().addTo(mapRef.current)
   }, [])
 
-  // update position
+  // update user position
   useEffect(() => {
-    if (!mapInstance.current) return
-    mapInstance.current.setView([center.lat, center.lon])
-    if (markerRef.current) {
-      markerRef.current.setLatLng([center.lat, center.lon])
-    }
+    if (!mapRef.current || !userMarkerRef.current) return
+    userMarkerRef.current.setLatLng([center.lat, center.lon])
+    mapRef.current.setView([center.lat, center.lon])
   }, [center])
 
-  // update gauges layer
+  // update gauges
   useEffect(() => {
     if (!gaugeLayerRef.current) return
     gaugeLayerRef.current.clearLayers()
+
     gauges.forEach((g) => {
       const color = trendColor(g.trend)
       const marker = L.circleMarker([g.lat, g.lon], {
@@ -59,28 +55,28 @@ export function MapView({ center, gauges = [] }: MapViewProps) {
         fillColor: color,
         fillOpacity: 1,
       })
-      marker.bindPopup(
-        `<strong>${g.name}</strong><br/>Gage height: ${
-          g.gageHeight !== null ? g.gageHeight.toFixed(2) + ' ' + g.unit : 'n/a'
-        }<br/>Δ24h: ${g.delta !== null ? g.delta.toFixed(2) : 'n/a'} ${
-          g.unit
-        }<br/><small>${new Date(g.timestamp).toLocaleString()}</small>`
-      )
+        .bindPopup(
+          `<strong>${g.name}</strong><br/>Gage height: ${
+            g.gageHeight !== null ? g.gageHeight.toFixed(2) + ' ' + g.unit : 'n/a'
+          }<br/>Δ: ${g.delta !== null ? g.delta.toFixed(2) : 'n/a'} ${
+            g.unit
+          }<br/><small>${new Date(g.timestamp).toLocaleString()}</small>`
+        )
       marker.addTo(gaugeLayerRef.current!)
     })
   }, [gauges])
 
-  return <div ref={mapRef} style={{ height: '400px', width: '100%' }} />
+  return <div ref={divRef} style={{ height: '400px', width: '100%' }} />
 }
 
-function trendColor(trend: GaugeTrend): string {
-  switch (trend) {
+function trendColor(t: GaugeTrend) {
+  switch (t) {
     case 'rising':
-      return '#d73027' // red
+      return '#d73027'
     case 'falling':
-      return '#4575b4' // blue
+      return '#4575b4'
     case 'steady':
-      return '#1a9850' // green
+      return '#1a9850'
     default:
       return '#666'
   }
