@@ -5,9 +5,13 @@ const axios = require('axios');
 const cron = require('node-cron');
 const WebSocket = require('ws');
 const path = require('path');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Create HTTP server
+const server = http.createServer(app);
 
 // Middleware
 app.use(helmet());
@@ -15,7 +19,7 @@ app.use(cors());
 app.use(express.json());
 
 // WebSocket server for real-time updates
-const wss = new WebSocket.Server({ port: 8080 });
+const wss = new WebSocket.Server({ server });
 
 // Store active monitoring locations
 const activeMonitoringLocations = new Map();
@@ -296,7 +300,7 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  console.log(`WebSocket server is running on port 8080`);
+  console.log(`WebSocket server is running on the same port ${PORT}`);
 });

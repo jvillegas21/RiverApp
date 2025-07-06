@@ -23,7 +23,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   
   const { location, error: locationError, requestLocation } = useGeolocation();
-  const { connected, lastMessage } = useWebSocket('ws://localhost:8080');
+  const { connected, lastMessage } = useWebSocket(`ws://localhost:5000`);
 
   useEffect(() => {
     setIsConnected(connected);
