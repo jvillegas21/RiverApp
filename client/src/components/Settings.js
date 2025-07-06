@@ -9,7 +9,8 @@ import {
   Save,
   RotateCcw,
   Shield,
-  Info
+  Info,
+  Activity
 } from 'lucide-react';
 
 const Settings = () => {

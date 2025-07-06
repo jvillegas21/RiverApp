@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 
 import WaterLevelChart from './WaterLevelChart';
-import RiskAssessment from './RiskAssessment';
 import NearbyMonitoringSites from './NearbyMonitoringSites';
 
 const Dashboard = ({ location }) => {

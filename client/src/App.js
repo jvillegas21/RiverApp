@@ -6,7 +6,7 @@ import {
   MapPin, 
   AlertTriangle, 
   TrendingUp, 
-  Settings,
+  Settings as SettingsIcon,
   Menu,
   X
 } from 'lucide-react';
@@ -37,7 +37,7 @@ function App() {
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
     { id: 'map', label: 'Map View', icon: MapPin },
-    { id: 'settings', label: 'Settings', icon: Settings }
+    { id: 'settings', label: 'Settings', icon: SettingsIcon }
   ];
 
   const renderCurrentView = () => {
