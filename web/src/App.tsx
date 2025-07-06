@@ -6,6 +6,9 @@ import { useEffect, useState, useRef } from 'react'
 import { getNearbyGaugeReadings } from './services/usgs'
 import type { GaugeReading } from './services/usgs'
 import { useInterval } from './hooks/useInterval'
+import { ToastContainer, toast } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
+import { useLocalStorage } from './hooks/useLocalStorage'
 
 function App() {
   const { pos, error } = useCurrentPosition()
@@ -16,8 +19,8 @@ function App() {
   const [history, setHistory] = useState<Record<string, GaugeReading[]>>({})
 
   // Configurable polling interval (minutes) & alert threshold (units)
-  const [pollMinutes, setPollMinutes] = useState(5)
-  const [alertThreshold, setAlertThreshold] = useState(0.3)
+  const [pollMinutes, setPollMinutes] = useLocalStorage('pollMinutes', 5)
+  const [alertThreshold, setAlertThreshold] = useLocalStorage('alertThreshold', 0.3)
 
   // Track last alert timestamp per gauge to avoid spam (ms epoch)
   const lastAlertRef = useRef<Record<string, number>>({})
@@ -71,15 +74,17 @@ function App() {
                 if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification('Flood Alert', { body: msg })
                 } else {
-                  // eslint-disable-next-line no-alert
-                  alert(msg)
+                  toast.warn(msg)
                 }
               }
             }
           }
         })
       })
-      .catch((err) => console.error('poll error', err))
+      .catch((err) => {
+        console.error('poll error', err)
+        toast.error('Failed to refresh gauge data')
+      })
   }, pollMinutes * 60_000)
 
   // Ask notification permission once
@@ -180,6 +185,7 @@ function App() {
           )}
         </>
       )}
+      <ToastContainer position="bottom-right" />
     </div>
   )
 }
