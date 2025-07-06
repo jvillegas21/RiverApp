@@ -9,6 +9,7 @@ import { useInterval } from './hooks/useInterval'
 import { ToastContainer, toast } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { useLocalStorage } from './hooks/useLocalStorage'
+import { TrendModal } from './components/TrendModal'
 
 function App() {
   const { pos, error } = useCurrentPosition()
@@ -22,8 +23,13 @@ function App() {
   const [pollMinutes, setPollMinutes] = useLocalStorage('pollMinutes', 5)
   const [alertThreshold, setAlertThreshold] = useLocalStorage('alertThreshold', 0.3)
 
+  // Flood stage level (absolute) – user configurable
+  const [floodStage, setFloodStage] = useLocalStorage('floodStage', 10) // default 10 units
+
   // Track last alert timestamp per gauge to avoid spam (ms epoch)
   const lastAlertRef = useRef<Record<string, number>>({})
+
+  const [modalGauge, setModalGauge] = useState<GaugeReading | null>(null)
 
   // fetch gauges when position available
   useEffect(() => {
@@ -65,12 +71,15 @@ function App() {
           const prev = history[g.siteId]?.[history[g.siteId].length - 1]
           if (prev && g.gageHeight !== null && prev.gageHeight !== null) {
             const diff = g.gageHeight - prev.gageHeight
-            if (diff > alertThreshold) {
+            const floodWarning = g.gageHeight !== null && g.gageHeight > floodStage
+            if (floodWarning || diff > alertThreshold) {
               const now = Date.now()
               const last = lastAlertRef.current[g.siteId] ?? 0
               if (now - last > pollMinutes * 60_000) {
                 lastAlertRef.current[g.siteId] = now
-                const msg = `${g.name} rising +${diff.toFixed(2)} ${g.unit}`
+                const msg = floodWarning
+                  ? `${g.name} is above flood stage (${g.gageHeight?.toFixed(2)} ${g.unit})`
+                  : `${g.name} rising +${diff.toFixed(2)} ${g.unit}`
                 if ('Notification' in window && Notification.permission === 'granted') {
                   new Notification('Flood Alert', { body: msg })
                 } else {
@@ -119,12 +128,23 @@ function App() {
               minutes
             </label>{' '}
             <label style={{ marginLeft: '1rem' }}>
-              Alert threshold{' '}
+              Alert Δ threshold{' '}
               <input
                 type="number"
                 step={0.1}
                 value={alertThreshold}
                 onChange={(e) => setAlertThreshold(Number(e.target.value))}
+                style={{ width: '4rem' }}
+              />{' '}
+              units
+            </label>
+            <label style={{ marginLeft: '1rem' }}>
+              Flood stage{' '}
+              <input
+                type="number"
+                step={0.1}
+                value={floodStage}
+                onChange={(e) => setFloodStage(Number(e.target.value))}
                 style={{ width: '4rem' }}
               />{' '}
               units
@@ -158,7 +178,11 @@ function App() {
               </thead>
               <tbody>
                 {gauges.map((g) => (
-                  <tr key={g.siteId}>
+                  <tr
+                    key={g.siteId}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setModalGauge(g)}
+                  >
                     <td>{g.name}</td>
                     <td>
                       {g.gageHeight !== null ? g.gageHeight.toFixed(2) : 'n/a'}{' '}
@@ -186,6 +210,14 @@ function App() {
         </>
       )}
       <ToastContainer position="bottom-right" />
+      {modalGauge && (
+        <TrendModal
+          open={!!modalGauge}
+          onClose={() => setModalGauge(null)}
+          title={modalGauge.name}
+          data={history[modalGauge.siteId] ?? []}
+        />
+      )}
     </div>
   )
 }
