@@ -2,17 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from '../contexts/LocationContext';
 import { useWeather } from '../contexts/WeatherContext';
 import { useRiver } from '../contexts/RiverContext';
-import LocationSelector from './LocationSelector';
+import LocationRadiusSelector from './LocationRadiusSelector';
 import WeatherCard from './WeatherCard';
 import RiverList from './RiverList';
 import FloodAlert from './FloodAlert';
-import RadiusSelector from './RadiusSelector';
 import { RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const { location, getCurrentLocation } = useLocation();
   const { weather, fetchWeather } = useWeather();
-  const { rivers, floodPredictions, loading, fetchFloodPrediction } = useRiver();
+  const { rivers, floodPredictions, loading, loadingProgress, fetchFloodPrediction } = useRiver();
   const [radius, setRadius] = useState(10); // miles
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -57,9 +56,8 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Location and Radius Selection */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LocationSelector />
-        <RadiusSelector radius={radius} onRadiusChange={setRadius} />
+      <div className="grid grid-cols-1 gap-6">
+        <LocationRadiusSelector radius={radius} onRadiusChange={setRadius} />
       </div>
 
       {/* Overall Risk Alert */}
@@ -79,7 +77,8 @@ const Dashboard: React.FC = () => {
           <RiverList 
             rivers={rivers} 
             floodPredictions={floodPredictions}
-            loading={loading} 
+            loading={loading}
+            loadingProgress={loadingProgress}
           />
         </div>
       </div>

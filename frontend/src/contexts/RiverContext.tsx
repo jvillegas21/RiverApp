@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import axios from 'axios';
 
 interface River {
@@ -33,6 +33,7 @@ interface RiverContextType {
   floodPredictions: FloodPrediction[];
   loading: boolean;
   error: string | null;
+  loadingProgress: number;
   fetchRivers: (lat: number, lng: number, radius: number) => Promise<void>;
   fetchFloodPrediction: (lat: number, lng: number, radius: number) => Promise<void>;
 }
@@ -56,6 +57,9 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
   const [floodPredictions, setFloodPredictions] = useState<FloodPrediction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const lastRequestRef = useRef<{ lat: number; lng: number; radius: number; timestamp: number } | null>(null);
+  const throttleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchRivers = async (lat: number, lng: number, radius: number) => {
     setLoading(true);
@@ -72,14 +76,44 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
   };
 
   const fetchFloodPrediction = async (lat: number, lng: number, radius: number) => {
+    // Throttle requests - only allow one request every 2 seconds
+    const now = Date.now();
+    const lastRequest = lastRequestRef.current;
+    
+    if (lastRequest && 
+        lastRequest.lat === lat && 
+        lastRequest.lng === lng && 
+        lastRequest.radius === radius &&
+        now - lastRequest.timestamp < 2000) {
+      return; // Skip this request if it's too soon
+    }
+
+    // Clear any existing timeout
+    if (throttleTimeoutRef.current) {
+      clearTimeout(throttleTimeoutRef.current);
+    }
+
+    // Set a timeout to prevent rapid successive calls
+    throttleTimeoutRef.current = setTimeout(() => {
+      throttleTimeoutRef.current = null;
+    }, 2000);
+
     setLoading(true);
     setError(null);
+    setLoadingProgress(0);
+    
+    // Update last request
+    lastRequestRef.current = { lat, lng, radius, timestamp: now };
     
     try {
-      // First get rivers, then get flood predictions
+      setLoadingProgress(25);
+      // First get rivers
       const riversResponse = await axios.get(`http://localhost:5001/api/rivers/nearby/${lat}/${lng}/${radius}`);
       const riversData = riversResponse.data;
+      setLoadingProgress(50);
       
+      setLoadingProgress(75);
+      // Then get flood predictions
       const predictionResponse = await axios.post('http://localhost:5001/api/flood/predict', {
         lat,
         lng,
@@ -89,10 +123,12 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
       
       setRivers(riversData);
       setFloodPredictions(predictionResponse.data.rivers);
+      setLoadingProgress(100);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch flood prediction');
     } finally {
       setLoading(false);
+      setLoadingProgress(0);
     }
   };
 
@@ -102,6 +138,7 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
       floodPredictions,
       loading,
       error,
+      loadingProgress,
       fetchRivers,
       fetchFloodPrediction
     }}>
