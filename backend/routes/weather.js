@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { sendSuccess, sendError, ERROR_CODES } = require('../utils/apiResponse');
+const { validateCoordinates } = require('../utils/validation');
 
 // NOAA/NWS API for all weather data
 const NOAA_API_BASE = 'https://api.weather.gov';
@@ -18,24 +20,37 @@ router.get('/current/:lat/:lng', async (req, res) => {
   try {
     const { lat, lng } = req.params;
     
+    // Validate coordinates
+    const coordValidation = validateCoordinates(lat, lng);
+    if (!coordValidation.isValid) {
+      return sendError(res, 'Invalid coordinates', ERROR_CODES.VALIDATION_ERROR, coordValidation.errors, 400);
+    }
+    
+    const latNum = coordValidation.lat;
+    const lngNum = coordValidation.lng;
+    
     // Check cache first
-    const cacheKey = `weather_${lat}_${lng}`;
+    const cacheKey = `weather_${latNum}_${lngNum}`;
     const cachedData = weatherCache.get(cacheKey);
     if (cachedData && (Date.now() - cachedData.timestamp) < CACHE_DURATION) {
-      return res.json(cachedData.data);
+      return sendSuccess(res, cachedData.data, 'Weather data (cached)', { 
+        cached: true, 
+        coordinates: { lat: latNum, lng: lngNum },
+        dataSource: 'NOAA/NWS (cached)'
+      });
     }
     
     // Rate limiting - ensure we don't make too many requests too quickly
     const now = Date.now();
     const lastRequest = requestTimestamps.get('weather');
     if (lastRequest && (now - lastRequest) < RATE_LIMIT_WINDOW) {
-      return res.status(429).json({ error: 'Too many requests. Please try again in a moment.' });
+      return sendError(res, 'Too many requests. Please try again in a moment.', ERROR_CODES.RATE_LIMIT_EXCEEDED, null, 429);
     }
     requestTimestamps.set('weather', now);
     
     // Get points data to find nearest weather station
     const pointsResponse = await axios.get(
-      `${NOAA_API_BASE}/points/${lat},${lng}`,
+      `${NOAA_API_BASE}/points/${latNum},${lngNum}`,
       {
         timeout: 10000,
         headers: {
@@ -99,7 +114,7 @@ router.get('/current/:lat/:lng', async (req, res) => {
         }
       },
       forecast: forecastResponse.data,
-      location: { lat: parseFloat(lat), lng: parseFloat(lng) }
+      location: { lat: latNum, lng: lngNum }
     };
 
     // Cache the result
@@ -108,17 +123,26 @@ router.get('/current/:lat/:lng', async (req, res) => {
       timestamp: Date.now()
     });
 
-    res.json(weatherData);
+    const meta = {
+      coordinates: { lat: latNum, lng: lngNum },
+      dataSource: 'NOAA/NWS Real-time',
+      cached: false,
+      station: nearestStation?.properties?.stationIdentifier
+    };
+
+    return sendSuccess(res, weatherData, 'Current weather data', meta);
   } catch (error) {
     console.error('NOAA Weather API error:', error.message);
     
     // Handle specific error types
     if (error.response?.status === 429) {
-      res.status(429).json({ error: 'Weather service is temporarily unavailable due to high demand. Please try again in a moment.' });
+      return sendError(res, 'Weather service is temporarily unavailable due to high demand. Please try again in a moment.', ERROR_CODES.RATE_LIMIT_EXCEEDED, null, 429);
     } else if (error.code === 'ECONNABORTED') {
-      res.status(408).json({ error: 'Weather service request timed out. Please try again.' });
+      return sendError(res, 'Weather service request timed out. Please try again.', ERROR_CODES.EXTERNAL_API_TIMEOUT, null, 408);
+    } else if (error.response?.status >= 500) {
+      return sendError(res, 'Weather service is temporarily unavailable', ERROR_CODES.EXTERNAL_API_ERROR, error.response?.data, 502);
     } else {
-      res.status(500).json({ error: 'Failed to fetch weather data: ' + error.message });
+      return sendError(res, 'Failed to fetch weather data', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 500);
     }
   }
 });
@@ -142,17 +166,26 @@ router.get('/precipitation/:lat/:lng', async (req, res) => {
   try {
     const { lat, lng } = req.params;
     
+    // Validate coordinates
+    const coordValidation = validateCoordinates(lat, lng);
+    if (!coordValidation.isValid) {
+      return sendError(res, 'Invalid coordinates', ERROR_CODES.VALIDATION_ERROR, coordValidation.errors, 400);
+    }
+    
+    const latNum = coordValidation.lat;
+    const lngNum = coordValidation.lng;
+    
     // Rate limiting for precipitation requests
     const now = Date.now();
     const lastRequest = requestTimestamps.get('precipitation');
     if (lastRequest && (now - lastRequest) < RATE_LIMIT_WINDOW) {
-      return res.status(429).json({ error: 'Too many requests. Please try again in a moment.' });
+      return sendError(res, 'Too many requests. Please try again in a moment.', ERROR_CODES.RATE_LIMIT_EXCEEDED, null, 429);
     }
     requestTimestamps.set('precipitation', now);
     
     // First get the forecast URL for the location
     const pointsResponse = await axios.get(
-      `${NOAA_API_BASE}/points/${lat},${lng}`,
+      `${NOAA_API_BASE}/points/${latNum},${lngNum}`,
       {
         timeout: 10000,
         headers: {
@@ -178,17 +211,25 @@ router.get('/precipitation/:lat/:lng', async (req, res) => {
         precipitation: period.probabilityOfPrecipitation?.value || 0
       }));
 
-    res.json(precipitationData);
+    const meta = {
+      coordinates: { lat: latNum, lng: lngNum },
+      dataSource: 'NOAA/NWS Forecast',
+      periods: precipitationData.length
+    };
+
+    return sendSuccess(res, precipitationData, 'Precipitation forecast data', meta);
   } catch (error) {
     console.error('Precipitation API error:', error.message);
     
     // Handle specific error types
     if (error.response?.status === 429) {
-      res.status(429).json({ error: 'Weather service is temporarily unavailable due to high demand. Please try again in a moment.' });
+      return sendError(res, 'Weather service is temporarily unavailable due to high demand. Please try again in a moment.', ERROR_CODES.RATE_LIMIT_EXCEEDED, null, 429);
     } else if (error.code === 'ECONNABORTED') {
-      res.status(408).json({ error: 'Weather service request timed out. Please try again.' });
+      return sendError(res, 'Weather service request timed out. Please try again.', ERROR_CODES.EXTERNAL_API_TIMEOUT, null, 408);
+    } else if (error.response?.status >= 500) {
+      return sendError(res, 'Weather service is temporarily unavailable', ERROR_CODES.EXTERNAL_API_ERROR, error.response?.data, 502);
     } else {
-      res.status(500).json({ error: 'Failed to fetch precipitation data: ' + error.message });
+      return sendError(res, 'Failed to fetch precipitation data', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 500);
     }
   }
 });

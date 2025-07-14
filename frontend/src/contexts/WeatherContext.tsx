@@ -1,17 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import axios from 'axios';
-import { buildApiUrl } from '../config/api';
 import { useLocation } from './LocationContext';
 import { useRadius } from './RadiusContext';
+import WeatherService from '../services/weatherService';
+import { WeatherData, ApiError, ApiErrorCode } from '../types/api';
 
-interface WeatherData {
-  current: any;
-  forecast: any;
-  location: {
-    lat: number;
-    lng: number;
-  };
-}
+// Using WeatherData from types/api.ts
 
 interface WeatherContextType {
   weather: WeatherData | null;
@@ -58,6 +51,9 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
       return; // Skip this request if it's too soon
     }
 
+    // Cancel any existing weather requests for this location
+    WeatherService.cancelWeatherRequests(lat, lng);
+
     // Clear any existing timeout
     if (throttleTimeoutRef.current) {
       clearTimeout(throttleTimeoutRef.current);
@@ -75,14 +71,35 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
     lastRequestRef.current = { lat, lng, timestamp: now };
     
     try {
-      const response = await axios.get(buildApiUrl(`/weather/current/${lat}/${lng}`));
-      setWeather(response.data);
-      setLastFetched(Date.now());
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('429')) {
-        setError('Too many requests. Please wait a moment before trying again.');
+      const response = await WeatherService.getCurrentWeather(lat, lng, {
+        timeout: 10000 // 10 second timeout for weather
+      });
+      
+      if (response.success && response.data) {
+        setWeather(response.data);
+        setLastFetched(Date.now());
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
+        throw new Error(response.error?.message || 'Failed to fetch weather data');
+      }
+    } catch (err: any) {
+      const apiError = err as ApiError;
+      
+      // Handle specific error codes
+      switch (apiError.code) {
+        case ApiErrorCode.RATE_LIMIT_EXCEEDED:
+          setError('Too many requests. Please wait a moment before trying again.');
+          break;
+        case ApiErrorCode.EXTERNAL_API_TIMEOUT:
+          setError('Weather service request timed out. Please try again.');
+          break;
+        case ApiErrorCode.EXTERNAL_API_ERROR:
+          setError('Weather service is temporarily unavailable.');
+          break;
+        case ApiErrorCode.VALIDATION_ERROR:
+          setError('Invalid location coordinates.');
+          break;
+        default:
+          setError(apiError.message || 'Failed to fetch weather data');
       }
     } finally {
       setLoading(false);
@@ -126,8 +143,12 @@ export const WeatherProvider: React.FC<WeatherProviderProps> = ({ children }) =>
       if (throttleTimeoutRef.current) {
         clearTimeout(throttleTimeoutRef.current);
       }
+      // Cancel all active weather requests on unmount
+      if (location) {
+        WeatherService.cancelWeatherRequests(location.lat, location.lng);
+      }
     };
-  }, []);
+  }, [location]);
 
   return (
     <WeatherContext.Provider value={{

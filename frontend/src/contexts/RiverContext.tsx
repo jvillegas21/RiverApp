@@ -1,49 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
-import axios from 'axios';
-import { buildApiUrl } from '../config/api';
 import { useLocation } from './LocationContext';
 import { useRadius } from './RadiusContext';
+import RiverService from '../services/riverService';
+import { River, FloodPrediction, ApiError, ApiErrorCode } from '../types/api';
 
+// Legacy interfaces for backward compatibility
 interface HistoricalDataPoint {
   timestamp: string;
   level: number;
   flow: number;
-}
-
-interface FloodStages {
-  action: number;
-  minor: number;
-  moderate: number;
-  major: number;
-}
-
-interface River {
-  id: string;
-  name: string;
-  location: {
-    lat: number;
-    lng: number;
-  };
-  flow: string;
-  stage: string;
-  unit: string;
-  lastUpdated: string;
-  historicalData?: HistoricalDataPoint[];
-  floodStages?: FloodStages;
-}
-
-interface FloodPrediction {
-  riverId: string;
-  riverName: string;
-  currentFlow: number;
-  currentStage: number;
-  flowTrend: string;
-  floodStage: string;
-  precipitationRisk: string;
-  floodProbability: number;
-  riskLevel: string;
-  timeToFlood: string;
-  recommendations: string[];
 }
 
 interface RiverContextType {
@@ -94,32 +59,40 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
     setMessage(null);
     
     try {
-      const response = await axios.get(buildApiUrl(`/rivers/nearby/${lat}/${lng}/${radiusValue}`));
+      const response = await RiverService.getNearbyRivers(lat, lng, radiusValue, {
+        timeout: 15000 // 15 second timeout for river data
+      });
       
-      // Handle new response format
-      if (response.data.rivers) {
-        setRivers(response.data.rivers);
-        setMessage(response.data.message || null);
-        setTotalFound(response.data.totalFound || null);
-      } else {
-        // Handle old format for backward compatibility
+      if (response.success && response.data) {
         setRivers(response.data);
-        setMessage(null);
-        setTotalFound(null);
+        setMessage(response.message);
+        setTotalFound(response.meta?.totalFound || response.data.length);
+      } else {
+        throw new Error(response.error?.message || 'Failed to fetch river data');
       }
       
       setLastFetched(Date.now());
     } catch (err: any) {
-      // Handle different error scenarios
-      if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else if (err.response?.data?.error === 'USGS_API_TIMEOUT') {
-        setError(`Unable to fetch data for ${radiusValue} mile radius. Try a smaller radius (10-25 miles) for better results.`);
-      } else if (err.response?.data?.error === 'NO_DATA') {
-        setError('No river data available in this area. Try adjusting your location or radius.');
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to fetch river data');
+      const apiError = err as ApiError;
+      
+      // Handle specific error codes
+      switch (apiError.code) {
+        case ApiErrorCode.EXTERNAL_API_TIMEOUT:
+          setError(`Unable to fetch data for ${radiusValue} mile radius. Try a smaller radius (10-25 miles) for better results.`);
+          break;
+        case ApiErrorCode.NO_DATA_AVAILABLE:
+          setError('No river data available in this area. Try adjusting your location or radius.');
+          break;
+        case ApiErrorCode.RATE_LIMIT_EXCEEDED:
+          setError('Too many requests. Please wait a moment before trying again.');
+          break;
+        case ApiErrorCode.VALIDATION_ERROR:
+          setError('Invalid location or radius values.');
+          break;
+        default:
+          setError(apiError.message || 'Failed to fetch river data');
       }
+      
       setRivers([]);
       setMessage(null);
       setTotalFound(null);
@@ -141,6 +114,9 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
       return; // Skip this request if it's too soon
     }
 
+    // Cancel any existing requests for this location
+    RiverService.cancelRiverRequests(lat, lng, radiusValue);
+
     // Clear any existing timeout
     if (throttleTimeoutRef.current) {
       clearTimeout(throttleTimeoutRef.current);
@@ -161,48 +137,69 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
     
     try {
       setLoadingProgress(25);
-      // First get rivers
-      const riversResponse = await axios.get(buildApiUrl(`/rivers/nearby/${lat}/${lng}/${radiusValue}`));
       
-      // Handle new response format
-      let riversData;
-      if (riversResponse.data.rivers) {
-        riversData = riversResponse.data.rivers;
-        setMessage(riversResponse.data.message || null);
-        setTotalFound(riversResponse.data.totalFound || null);
-      } else {
-        // Handle old format for backward compatibility
-        riversData = riversResponse.data;
-        setMessage(null);
-        setTotalFound(null);
+      // First get rivers
+      const riversResponse = await RiverService.getNearbyRivers(lat, lng, radiusValue, {
+        timeout: 15000
+      });
+      
+      if (!riversResponse.success || !riversResponse.data) {
+        throw new Error(riversResponse.error?.message || 'Failed to fetch river data');
       }
+
+      const riversData = riversResponse.data;
+      setMessage(riversResponse.message);
+      setTotalFound(riversResponse.meta?.totalFound || riversData.length);
       
       setLoadingProgress(50);
       
-      setLoadingProgress(75);
-      // Then get flood predictions
-      const predictionResponse = await axios.post(buildApiUrl('/flood/predict'), {
-        lat,
-        lng,
-        radius: radiusValue,
-        rivers: riversData
-      });
+      // Then get flood predictions if we have rivers
+      if (riversData.length > 0) {
+        setLoadingProgress(75);
+        
+        const predictionResponse = await RiverService.getFloodPredictions({
+          lat,
+          lng,
+          radius: radiusValue,
+          rivers: riversData
+        }, {
+          timeout: 20000 // Longer timeout for prediction calculations
+        });
+        
+        if (predictionResponse.success && predictionResponse.data) {
+          setFloodPredictions(predictionResponse.data.rivers || []);
+        } else {
+          console.warn('Flood prediction failed:', predictionResponse.error);
+          setFloodPredictions([]); // Still show rivers even if predictions fail
+        }
+      } else {
+        setFloodPredictions([]);
+      }
       
       setRivers(riversData);
-      setFloodPredictions(predictionResponse.data.rivers || []);
       setLoadingProgress(100);
       setLastFetched(Date.now());
     } catch (err: any) {
-      // Handle different error scenarios
-      if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else if (err.response?.data?.error === 'USGS_API_TIMEOUT') {
-        setError(`Unable to fetch data for ${radiusValue} mile radius. Try a smaller radius (10-25 miles) for better results.`);
-      } else if (err.response?.data?.error === 'NO_DATA') {
-        setError('No river data available in this area. Try adjusting your location or radius.');
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to fetch flood prediction');
+      const apiError = err as ApiError;
+      
+      // Handle specific error codes
+      switch (apiError.code) {
+        case ApiErrorCode.EXTERNAL_API_TIMEOUT:
+          setError(`Unable to fetch data for ${radiusValue} mile radius. Try a smaller radius (10-25 miles) for better results.`);
+          break;
+        case ApiErrorCode.NO_DATA_AVAILABLE:
+          setError('No river data available in this area. Try adjusting your location or radius.');
+          break;
+        case ApiErrorCode.RATE_LIMIT_EXCEEDED:
+          setError('Too many requests. Please wait a moment before trying again.');
+          break;
+        case ApiErrorCode.VALIDATION_ERROR:
+          setError('Invalid location or radius values.');
+          break;
+        default:
+          setError(apiError.message || 'Failed to fetch flood prediction');
       }
+      
       setRivers([]);
       setFloodPredictions([]);
       setMessage(null);
@@ -250,8 +247,12 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
       if (throttleTimeoutRef.current) {
         clearTimeout(throttleTimeoutRef.current);
       }
+      // Cancel all active river requests on unmount
+      if (location && radius) {
+        RiverService.cancelRiverRequests(location.lat, location.lng, radius);
+      }
     };
-  }, []);
+  }, [location, radius]);
 
   return (
     <RiverContext.Provider value={{

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { sendSuccess, sendError, ERROR_CODES } = require('../utils/apiResponse');
+const { validateCoordinates, validateRadius, validateSiteId } = require('../utils/validation');
 
 // USGS Water Services API
 const USGS_BASE_URL = 'https://waterservices.usgs.gov/nwis';
@@ -69,10 +71,21 @@ router.get('/nearby/:lat/:lng/:radius', async (req, res) => {
   const { lat, lng, radius } = req.params;
   
   try {
-    // Validate and constrain coordinates
-    const latNum = Math.max(-90, Math.min(90, parseFloat(lat)));
-    const lngNum = Math.max(-180, Math.min(180, parseFloat(lng)));
-    const radiusNum = Math.max(0.1, Math.min(100, parseFloat(radius)));
+    // Validate input parameters
+    const coordValidation = validateCoordinates(lat, lng);
+    const radiusValidation = validateRadius(radius);
+    
+    if (!coordValidation.isValid) {
+      return sendError(res, 'Invalid coordinates', ERROR_CODES.VALIDATION_ERROR, coordValidation.errors, 400);
+    }
+    
+    if (!radiusValidation.isValid) {
+      return sendError(res, 'Invalid radius', ERROR_CODES.VALIDATION_ERROR, radiusValidation.errors, 400);
+    }
+    
+    const latNum = coordValidation.lat;
+    const lngNum = coordValidation.lng;
+    const radiusNum = radiusValidation.value;
     
     // Calculate bounding box with proper validation
     const latDelta = radiusNum / 69; // Approximate miles to degrees
@@ -113,7 +126,7 @@ router.get('/nearby/:lat/:lng/:radius', async (req, res) => {
     }
     if (!response.data || !response.data.value || !Array.isArray(response.data.value.timeSeries)) {
       console.error('[USGS] Unexpected response structure:', response.data);
-      return res.status(500).json({ error: 'USGS API returned unexpected structure', details: response.data });
+      return sendError(res, 'USGS API returned unexpected data structure', ERROR_CODES.EXTERNAL_API_ERROR, 'Invalid response format', 502);
     }
     // Group timeSeries by site ID since each parameter comes as separate entries
     const stationMap = new Map();
@@ -171,14 +184,36 @@ router.get('/nearby/:lat/:lng/:radius', async (req, res) => {
     );
     
     console.log(`[USGS] Found ${rivers.length} stations, ${uniqueRivers.length} unique rivers`);
-    res.json(uniqueRivers);
+    
+    // Create metadata for the response
+    const meta = {
+      totalFound: uniqueRivers.length,
+      radius: radiusNum,
+      center: { lat: latNum, lng: lngNum },
+      dataSource: 'USGS Real-time Data'
+    };
+    
+    const message = uniqueRivers.length === 0 
+      ? `No rivers found within ${radiusNum} miles of your location`
+      : `Found ${uniqueRivers.length} river${uniqueRivers.length !== 1 ? 's' : ''} within ${radiusNum} miles`;
+    
+    return sendSuccess(res, uniqueRivers, message, meta);
   } catch (error) {
     if (error.response) {
       console.error('[USGS] API error:', error.response.status, error.response.data);
-      res.status(500).json({ error: 'Failed to fetch USGS data', status: error.response.status, details: error.response.data });
+      if (error.response.status === 429) {
+        return sendError(res, 'Too many requests to USGS API. Please try again later.', ERROR_CODES.RATE_LIMIT_EXCEEDED, null, 429);
+      } else if (error.response.status >= 500) {
+        return sendError(res, 'USGS API is temporarily unavailable', ERROR_CODES.EXTERNAL_API_ERROR, error.response.data, 502);
+      } else {
+        return sendError(res, 'Failed to fetch river data from USGS', ERROR_CODES.EXTERNAL_API_ERROR, error.response.data, 500);
+      }
+    } else if (error.code === 'ECONNABORTED') {
+      console.error('[USGS] Timeout error:', error.message);
+      return sendError(res, 'Request to USGS API timed out. Try a smaller search radius.', ERROR_CODES.EXTERNAL_API_TIMEOUT, null, 408);
     } else {
       console.error('[USGS] General error:', error.message);
-      res.status(500).json({ error: 'Failed to fetch USGS data', message: error.message });
+      return sendError(res, 'Failed to fetch river data', ERROR_CODES.GENERAL_ERROR, error.message, 500);
     }
   }
 });
@@ -188,9 +223,25 @@ router.get('/flow/:siteId', async (req, res) => {
   try {
     const { siteId } = req.params;
     
+    // Validate site ID
+    const siteValidation = validateSiteId(siteId);
+    if (!siteValidation.isValid) {
+      return sendError(res, 'Invalid site ID', ERROR_CODES.VALIDATION_ERROR, siteValidation.errors, 400);
+    }
+    
     const response = await axios.get(
-      `${USGS_BASE_URL}/iv/?format=json&sites=${siteId}&parameterCd=00060,00065&period=P7D`
+      `${USGS_BASE_URL}/iv/?format=json&sites=${siteValidation.value}&parameterCd=00060,00065&period=P7D`,
+      {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'RiverApp/1.0 (https://github.com/your-repo)'
+        }
+      }
     );
+
+    if (!response.data?.value?.timeSeries) {
+      return sendError(res, 'No flow data available for this site', ERROR_CODES.NO_DATA_AVAILABLE, null, 404);
+    }
 
     const flowData = response.data.value.timeSeries.map(station => ({
       siteId: station.sourceInfo.siteCode[0].value,
@@ -204,10 +255,19 @@ router.get('/flow/:siteId', async (req, res) => {
       }))
     }));
 
-    res.json(flowData);
+    const meta = {
+      siteId: siteValidation.value,
+      period: '7 days',
+      dataSource: 'USGS Real-time Data'
+    };
+
+    return sendSuccess(res, flowData, `Flow data for site ${siteValidation.value}`, meta);
   } catch (error) {
     console.error('USGS flow API error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch flow data' });
+    if (error.code === 'ECONNABORTED') {
+      return sendError(res, 'Request timed out while fetching flow data', ERROR_CODES.EXTERNAL_API_TIMEOUT, null, 408);
+    }
+    return sendError(res, 'Failed to fetch flow data', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 500);
   }
 });
 
@@ -216,9 +276,25 @@ router.get('/flood-stage/:siteId', async (req, res) => {
   try {
     const { siteId } = req.params;
     
+    // Validate site ID
+    const siteValidation = validateSiteId(siteId);
+    if (!siteValidation.isValid) {
+      return sendError(res, 'Invalid site ID', ERROR_CODES.VALIDATION_ERROR, siteValidation.errors, 400);
+    }
+    
     const response = await axios.get(
-      `${USGS_BASE_URL}/iv/?format=json&sites=${siteId}&parameterCd=00065&period=P7D`
+      `${USGS_BASE_URL}/iv/?format=json&sites=${siteValidation.value}&parameterCd=00065&period=P7D`,
+      {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'RiverApp/1.0 (https://github.com/your-repo)'
+        }
+      }
     );
+
+    if (!response.data?.value?.timeSeries) {
+      return sendError(res, 'No stage data available for this site', ERROR_CODES.NO_DATA_AVAILABLE, null, 404);
+    }
 
     // Extract stage data properly from the USGS API response
     let currentStage = 0;
@@ -233,7 +309,7 @@ router.get('/flood-stage/:siteId', async (req, res) => {
     }
 
     // Get the best available flood stages (official preferred, fallback if needed)
-    const floodStages = await getBestFloodStages(siteId, currentStage);
+    const floodStages = await getBestFloodStages(siteValidation.value, currentStage);
 
     const floodStatus = {
       currentStage,
@@ -246,10 +322,19 @@ router.get('/flood-stage/:siteId', async (req, res) => {
             currentStage >= floodStages.minor ? 'Medium' : 'Low'
     };
 
-    res.json(floodStatus);
+    const meta = {
+      siteId: siteValidation.value,
+      period: '7 days',
+      dataSource: 'USGS Real-time Data + ' + floodStages.source
+    };
+
+    return sendSuccess(res, floodStatus, `Flood stage information for site ${siteValidation.value}`, meta);
   } catch (error) {
     console.error('Flood stage API error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch flood stage data' });
+    if (error.code === 'ECONNABORTED') {
+      return sendError(res, 'Request timed out while fetching flood stage data', ERROR_CODES.EXTERNAL_API_TIMEOUT, null, 408);
+    }
+    return sendError(res, 'Failed to fetch flood stage data', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 500);
   }
 });
 
