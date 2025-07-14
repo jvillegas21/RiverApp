@@ -8,7 +8,7 @@ import WeatherCard from './WeatherCard';
 import RiverList from './RiverList';
 import FloodAlert from './FloodAlert';
 import Settings from './Settings';
-import { RefreshCw, AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Cloud, Thermometer, Wind, Droplets, FilePlus2, Trash2, Settings as SettingsIcon, MapPin } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Cloud, Thermometer, Wind, Droplets, Settings as SettingsIcon, MapPin } from 'lucide-react';
 import ReportForm from './ReportForm';
 import ReportList from './ReportList';
 import { useReports } from '../contexts/ReportContext';
@@ -222,22 +222,6 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {message && !error && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start">
-              <CheckCircle className="w-5 h-5 text-blue-400 mt-0.5 mr-3 flex-shrink-0" />
-              <div className="flex-1">
-                <h3 className="text-sm font-medium text-blue-800">Information</h3>
-                <p className="text-sm text-blue-700 mt-1">{message}</p>
-                {totalFound !== null && (
-                  <p className="text-sm text-blue-600 mt-2">
-                    Found {totalFound} river{totalFound !== 1 ? 's' : ''} within {radius} mile{radius !== 1 ? 's' : ''}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
         
         {/* Inline Weather Info */}
         <div className="mb-4">
