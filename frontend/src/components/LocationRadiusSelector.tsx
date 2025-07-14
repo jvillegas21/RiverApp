@@ -1,10 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLocation } from '../contexts/LocationContext';
 import { MapPin, Navigation, Settings } from 'lucide-react';
+import LocationSkeleton from './LocationSkeleton';
+import { GEOCODING_CONFIG, isMapBoxConfigured } from '../config/geocoding';
 
 interface LocationRadiusSelectorProps {
   radius: number;
   onRadiusChange: (radius: number) => void;
+}
+
+function useCity(lat: number, lng: number) {
+  const [city, setCity] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  
+  useEffect(() => {
+    let ignore = false;
+    async function fetchCity() {
+      if (lat === 0 && lng === 0) return;
+      
+      // Use MapBox for reverse geocoding
+      if (!isMapBoxConfigured()) {
+        console.log('MapBox not configured, skipping city lookup');
+        if (!ignore) {
+          setCity(null);
+          setLoading(false);
+        }
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        const res = await fetch(GEOCODING_CONFIG.MAPBOX_REVERSE_URL(lat, lng, GEOCODING_CONFIG.MAPBOX_TOKEN));
+        const data = await res.json();
+        if (!ignore) {
+          if (data.features && data.features.length > 0) {
+            const feature = data.features[0];
+            const context = feature.context || [];
+            
+            // Extract city and county from MapBox response
+            let cityName = null;
+            let countyName = null;
+            
+            // MapBox context structure: [country, region, place]
+            for (const item of context) {
+              if (item.id.startsWith('place.')) {
+                cityName = item.text;
+              } else if (item.id.startsWith('region.')) {
+                countyName = item.text;
+              }
+            }
+            
+            // If no city in context, use the main feature text
+            if (!cityName && feature.place_type.includes('place')) {
+              cityName = feature.text;
+            }
+            
+            const label = cityName && countyName ? `${cityName} (${countyName})` : cityName || countyName;
+            setCity(label);
+          } else {
+            setCity(null);
+          }
+          setLoading(false);
+        }
+      } catch (e) {
+        console.log('MapBox reverse geocoding error:', e);
+        if (!ignore) {
+          setCity(null);
+          setLoading(false);
+        }
+      }
+    }
+    fetchCity();
+    return () => { ignore = true; };
+  }, [lat, lng]);
+  
+  return { city, loading };
 }
 
 const LocationRadiusSelector: React.FC<LocationRadiusSelectorProps> = ({ radius, onRadiusChange }) => {
@@ -21,8 +91,13 @@ const LocationRadiusSelector: React.FC<LocationRadiusSelectorProps> = ({ radius,
     
     if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
       setLocation({ lat, lng });
+      // Clear the input fields after setting location
+      setManualLat('');
+      setManualLng('');
     }
   };
+
+  const { city, loading: cityLoading } = location ? useCity(location.lat, location.lng) : { city: null, loading: false };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
@@ -46,10 +121,14 @@ const LocationRadiusSelector: React.FC<LocationRadiusSelectorProps> = ({ radius,
 
         {/* Current Location Display */}
         {location && (
-          <div className="bg-green-50 p-3 rounded-lg">
-            <p className="text-sm text-green-800">
-              <strong>Current Location:</strong> {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-            </p>
+          <div className="text-sm text-gray-600 mt-2 flex items-center space-x-2">
+            <MapPin className="w-4 h-4" />
+            <strong>Current Location:</strong> 
+            {cityLoading ? (
+              <LocationSkeleton compact={true} />
+            ) : (
+              <span>{city ? <span>{city}, </span> : null}<span className="text-xs text-gray-400">{location.lat.toFixed(4)}, {location.lng.toFixed(4)}</span></span>
+            )}
           </div>
         )}
 

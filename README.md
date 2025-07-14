@@ -1,4 +1,4 @@
-# RiverFlood Alert - Real-Time Flood Detection App
+# RivrWatch - Real-Time Flood Detection App
 
 A comprehensive flood detection and prediction application that provides real-time monitoring of river conditions, weather patterns, and flood risks in your area.
 
@@ -8,9 +8,10 @@ A comprehensive flood detection and prediction application that provides real-ti
 - **Real-time River Monitoring**: Track water levels, flow rates, and flood stages for rivers and creeks
 - **Weather Integration**: Combine current weather and precipitation forecasts with river data
 - **Intelligent Flood Prediction**: Advanced algorithms that consider upstream rivers, historical patterns, and watershed analysis
-- **Radius-based Search**: Customizable search radius to monitor rivers within your specified range
-- **Interactive Map View**: Visual representation of flood risks and river conditions
-- **Emergency Alerts**: Real-time notifications for high-risk flood conditions
+- **Road Closure Detection**: Automatic detection and mapping of road closures based on river flooding risks
+- **Radius-based Search**: Customizable search radius to monitor rivers and road closures within your specified range
+- **Interactive Map View**: Visual representation of flood risks, river conditions, and road closures
+- **Emergency Alerts**: Real-time notifications for high-risk flood conditions and road closures
 
 ### Advanced Analytics
 - **Upstream River Analysis**: Consider the impact of rivers upstream from your location
@@ -38,7 +39,7 @@ A comprehensive flood detection and prediction application that provides real-ti
 
 1. **Clone and navigate to the project**
    ```bash
-   cd RiverApp
+   cd RivrWatch
    ```
 
 2. **Install all dependencies**
@@ -133,6 +134,10 @@ The app uses **Leaflet** with **OpenStreetMap** tiles, which are completely free
 - `GET /api/flood/alerts/:lat/:lng/:radius` - Real-time flood alerts
 - `GET /api/flood/history/:siteId` - Historical flood data
 - `GET /api/flood/watershed/:lat/:lng/:radius` - Watershed analysis
+
+### Road Closures
+- `GET /api/roadclosures/nearby/:lat/:lng/:radius` - Road closures within radius
+- `GET /api/roadclosures/details/:closureId` - Detailed road closure information
 
 ## 🧠 Flood Prediction Algorithm
 

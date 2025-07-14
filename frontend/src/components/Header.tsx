@@ -1,6 +1,20 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Droplets, Map, Settings } from 'lucide-react';
+import { Map } from 'lucide-react';
+import Lottie from 'lottie-react';
+import waterAnimation from './animations/water-animation.json';
+
+// RivrWatch Logo Component with Lottie Animation
+const RivrWatchLogo: React.FC = () => (
+  <div className="w-8 h-8">
+    <Lottie 
+      animationData={waterAnimation} 
+      loop={true}
+      autoplay={true}
+      style={{ width: '100%', height: '100%' }}
+    />
+  </div>
+);
 
 const Header: React.FC = () => {
   const location = useLocation();
@@ -11,9 +25,9 @@ const Header: React.FC = () => {
     <header className="bg-blue-600 text-white shadow-lg">
       <div className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
-          <Link to="/" className="flex items-center space-x-2 text-xl font-bold">
-            <Droplets className="w-8 h-8" />
-            <span>RiverFlood Alert</span>
+          <Link to="/" className="flex items-center space-x-3 text-xl font-bold">
+            <RivrWatchLogo />
+            <span>RivrWatch</span>
           </Link>
           
           <nav className="flex space-x-6">
@@ -34,16 +48,6 @@ const Header: React.FC = () => {
             >
               <Map className="w-5 h-5" />
               <span>Map</span>
-            </Link>
-            
-            <Link 
-              to="/settings" 
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
-                isActive('/settings') ? 'bg-blue-700' : 'hover:bg-blue-500'
-              }`}
-            >
-              <Settings className="w-5 h-5" />
-              <span>Settings</span>
             </Link>
           </nav>
         </div>

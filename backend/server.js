@@ -26,11 +26,13 @@ app.use(limiter);
 const weatherRoutes = require('./routes/weather');
 const riverRoutes = require('./routes/rivers');
 const floodRoutes = require('./routes/flood');
+const reportRoutes = require('./routes/reports');
 
 // Routes
 app.use('/api/weather', weatherRoutes);
 app.use('/api/rivers', riverRoutes);
 app.use('/api/flood', floodRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

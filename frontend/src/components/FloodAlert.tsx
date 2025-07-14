@@ -67,18 +67,19 @@ const FloodAlert: React.FC<FloodAlertProps> = ({ risk }) => {
   const config = getAlertConfig(risk);
 
   return (
-    <div className={`border rounded-lg p-4 ${config.bgColor}`} role="alert" aria-live="polite">
-      <div className="flex items-start space-x-3">
-        <div className={`${config.textColor} flex-shrink-0`}>
-          {config.icon}
-        </div>
-        <div className="flex-1">
-          <h3 className={`text-lg font-semibold ${config.textColor}`}>
-            {config.title}
-          </h3>
-          <p className={`mt-1 ${config.textColor}`}>
-            {config.description}
-          </p>
+    <div className={`bg-white border rounded-lg shadow-md ${config.bgColor}`} role="alert" aria-live="polite">
+      <div className="p-4">
+        <div className="flex items-start space-x-3">
+          <div className={`${config.textColor} flex-shrink-0`}>
+            {config.icon}
+          </div>
+          <div className="flex-1">
+            <h3 className={`text-lg font-semibold ${config.textColor}`}>
+              {config.title}
+            </h3>
+            <p className={`mt-1 ${config.textColor}`}>
+              {config.description}
+            </p>
           
           {config.recommendations.length > 0 && (
             <div className="mt-3">
@@ -95,6 +96,7 @@ const FloodAlert: React.FC<FloodAlertProps> = ({ risk }) => {
               </ul>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

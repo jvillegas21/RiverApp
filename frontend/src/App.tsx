@@ -7,29 +7,39 @@ import Settings from './components/Settings';
 import { LocationProvider } from './contexts/LocationContext';
 import { WeatherProvider } from './contexts/WeatherContext';
 import { RiverProvider } from './contexts/RiverContext';
+import { ReportProvider } from './contexts/ReportContext';
+import { RadiusProvider } from './contexts/RadiusContext';
+import LocationRequirementModal from './components/LocationRequirementModal';
 import './App.css';
 
-function App() {
+const App: React.FC = () => {
   return (
-    <LocationProvider>
-      <WeatherProvider>
-        <RiverProvider>
-          <Router>
-            <div className="App">
-              <Header />
-              <main className="main-content">
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/map" element={<MapView />} />
-                  <Route path="/settings" element={<Settings />} />
-                </Routes>
-              </main>
-            </div>
-          </Router>
-        </RiverProvider>
-      </WeatherProvider>
-    </LocationProvider>
+    <div className="App">
+      <Router>
+        <LocationProvider>
+          <RadiusProvider>
+            <WeatherProvider>
+              <RiverProvider>
+                <ReportProvider>
+                  <div className="min-h-screen bg-gray-100">
+                    <Header />
+                    <main className="main-content">
+                      <Routes>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/map" element={<MapView />} />
+                        <Route path="/settings" element={<Settings />} />
+                      </Routes>
+                    </main>
+                    <LocationRequirementModal />
+                  </div>
+                </ReportProvider>
+              </RiverProvider>
+            </WeatherProvider>
+          </RadiusProvider>
+        </LocationProvider>
+      </Router>
+    </div>
   );
-}
+};
 
 export default App; 

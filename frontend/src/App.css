@@ -98,4 +98,275 @@ button:focus {
   .grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* River Card Animations */
+/* Water Flow Animations */
+.water-flow-slow .water-wave {
+  animation: waterFlowSlow 3s infinite linear;
+}
+
+.water-flow-medium .water-wave {
+  animation: waterFlowMedium 2s infinite linear;
+}
+
+.water-flow-fast .water-wave {
+  animation: waterFlowFast 1s infinite linear;
+}
+
+@keyframes waterFlowSlow {
+  0% { transform: translateX(-100%) translateY(0); opacity: 0; }
+  10% { opacity: 0.3; }
+  90% { opacity: 0.3; }
+  100% { transform: translateX(100%) translateY(0); opacity: 0; }
+}
+
+@keyframes waterFlowMedium {
+  0% { transform: translateX(-100%) translateY(0); opacity: 0; }
+  10% { opacity: 0.4; }
+  90% { opacity: 0.4; }
+  100% { transform: translateX(100%) translateY(0); opacity: 0; }
+}
+
+@keyframes waterFlowFast {
+  0% { transform: translateX(-100%) translateY(0); opacity: 0; }
+  10% { opacity: 0.5; }
+  90% { opacity: 0.5; }
+  100% { transform: translateX(100%) translateY(0); opacity: 0; }
+}
+
+.water-wave {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.1), transparent);
+  transform: skewX(-15deg);
+}
+
+/* Floating Droplets Animation */
+.floating-droplet {
+  position: absolute;
+  animation: float 3s infinite ease-in-out;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0; }
+  25% { opacity: 0.7; }
+  50% { transform: translateY(-10px) rotate(180deg); opacity: 0.3; }
+  75% { opacity: 0.7; }
+}
+
+/* Flow Indicator Animation */
+.flow-indicator {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.flow-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+}
+
+.flow-dot.slow {
+  animation: flowPulse 2s infinite;
+}
+
+.flow-dot.medium {
+  animation: flowPulse 1.5s infinite;
+}
+
+.flow-dot.fast {
+  animation: flowPulse 1s infinite;
+}
+
+@keyframes flowPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Card Entrance Animation */
+.river-card-enter {
+  animation: cardEnter 0.6s ease-out;
+}
+
+@keyframes cardEnter {
+  0% { 
+    opacity: 0; 
+    transform: translateY(20px) scale(0.95); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+/* Hover Effects */
+.river-card-hover {
+  transition: all 0.3s ease;
+}
+
+.river-card-hover:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Risk Level Pulse Animation */
+.risk-pulse {
+  animation: riskPulse 2s infinite;
+}
+
+@keyframes riskPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+} 
+
+/* Water Level Chart Animations */
+.water-level-chart {
+  animation: chartFadeIn 0.8s ease-out;
+}
+
+@keyframes chartFadeIn {
+  0% { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+.water-level-line {
+  animation: lineDraw 1.2s ease-out;
+}
+
+@keyframes lineDraw {
+  0% { 
+    stroke-dasharray: 1000; 
+    stroke-dashoffset: 1000; 
+  }
+  100% { 
+    stroke-dashoffset: 0; 
+  }
+}
+
+.water-level-point {
+  animation: pointPulse 0.6s ease-out;
+  animation-delay: calc(var(--point-index) * 0.1s);
+}
+
+@keyframes pointPulse {
+  0% { 
+    opacity: 0; 
+    transform: scale(0); 
+  }
+  50% { 
+    transform: scale(1.2); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+
+.flood-stage-line {
+  animation: stageLineAppear 0.8s ease-out;
+  animation-delay: calc(var(--stage-index) * 0.2s);
+}
+
+@keyframes stageLineAppear {
+  0% { 
+    opacity: 0; 
+    transform: scaleX(0); 
+  }
+  100% { 
+    opacity: 0.6; 
+    transform: scaleX(1); 
+  }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.animate-fade-out {
+  animation: fadeOut 1.2s forwards;
+}
+
+@keyframes bounce-up {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-8px); }
+  50% { transform: translateY(-12px); }
+  70% { transform: translateY(-8px); }
+}
+.animate-bounce-up {
+  animation: bounce-up 1s infinite cubic-bezier(0.4,0,0.2,1);
+}
+
+@keyframes bounce-down {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(8px); }
+  50% { transform: translateY(12px); }
+  70% { transform: translateY(8px); }
+}
+.animate-bounce-down {
+  animation: bounce-down 0.5s ease-out;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  outline: none;
+}
+
+@media (max-width: 768px) {
+  .modal-content {
+    max-width: 95vw;
+    max-height: 95vh;
+    margin: 0.5rem;
+  }
+} 
+
+/* Mobile Weather Grid - Force Grid Display */
+@media (max-width: 639px) {
+  .mobile-weather-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 1rem !important;
+  }
+  
+  .mobile-weather-item {
+    display: flex !important;
+    align-items: center !important;
+    background-color: #f9fafb !important;
+    border-radius: 0.5rem !important;
+    padding: 0.75rem !important;
+    border: 1px solid #e5e7eb !important;
+  }
 } 

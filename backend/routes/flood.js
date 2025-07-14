@@ -4,6 +4,8 @@ const axios = require('axios');
 
 // USGS Water Services API
 const USGS_BASE_URL = 'https://waterservices.usgs.gov/nwis';
+// NWPS API for official flood stages
+const NWPS_BASE_URL = 'https://api.water.noaa.gov/nwps/v1';
 
 // Flood prediction and risk assessment
 router.post('/predict', async (req, res) => {
@@ -138,25 +140,29 @@ router.post('/predict', async (req, res) => {
             }
           }
           
-          // Get real flood stage data from USGS
-          const floodStageResponse = await axios.get(
-            `${USGS_BASE_URL}/iv/?format=json&sites=${river.id}&parameterCd=00065&period=P7D`,
-            {
-              timeout: 8000,
-              headers: {
-                'User-Agent': 'RiverApp/1.0 (https://github.com/your-repo)'
-              }
-            }
+          // Get real flood stage data from USGS - use the same call as flow since it has both parameters
+          // Extract stage data from the combined response
+          let currentStage = 0;
+          const stageTimeSeries = flowResponse.data.value.timeSeries.find(ts => 
+            ts.variable.variableCode[0].value === '00065'
           );
+          if (stageTimeSeries && stageTimeSeries.values && stageTimeSeries.values[0] && 
+              stageTimeSeries.values[0].value && stageTimeSeries.values[0].value[0] &&
+              stageTimeSeries.values[0].value[0].value !== undefined && 
+              stageTimeSeries.values[0].value[0].value !== null) {
+            currentStage = parseFloat(stageTimeSeries.values[0].value[0].value);
+          }
           
-          const currentStage = parseFloat(floodStageResponse.data.value.timeSeries[0]?.values[0]?.value[0]?.value || 0);
+          // Get the best available flood stages (official preferred, fallback if needed)
+          const floodStages = await getBestFloodStages(river.id, currentStage);
+          
           const floodStageData = {
             currentStage,
-            floodStages: { action: 10.0, minor: 12.0, moderate: 15.0, major: 18.0 },
-            status: currentStage >= 18.0 ? 'Major Flood' :
-                    currentStage >= 15.0 ? 'Moderate Flood' :
-                    currentStage >= 12.0 ? 'Minor Flood' :
-                    currentStage >= 10.0 ? 'Action Stage' : 'Normal'
+            floodStages,
+            status: currentStage >= floodStages.major ? 'Major Flood' :
+                    currentStage >= floodStages.moderate ? 'Moderate Flood' :
+                    currentStage >= floodStages.minor ? 'Minor Flood' :
+                    currentStage >= floodStages.action ? 'Action Stage' : 'Normal'
           };
 
           return analyzeFloodRisk(river, flowResponse.data, floodStageData, precipitationData);
@@ -184,43 +190,218 @@ router.post('/predict', async (req, res) => {
 
 // Analyze flood risk for a specific river
 function analyzeFloodRisk(river, flowData, floodStage, precipitation) {
-  const currentFlow = parseFloat(flowData[0]?.values[0]?.value || 0);
+  // Extract flow data from the correct timeSeries structure
+  let currentFlow = 0;
+  const flowTimeSeries = flowData.value.timeSeries.find(ts => 
+    ts && ts.variable && ts.variable.variableCode && ts.variable.variableCode[0] && 
+    ts.variable.variableCode[0].value === '00060'
+  );
+  if (flowTimeSeries && flowTimeSeries.values && flowTimeSeries.values[0] && 
+      flowTimeSeries.values[0].value && flowTimeSeries.values[0].value[0] &&
+      flowTimeSeries.values[0].value[0].value !== undefined && 
+      flowTimeSeries.values[0].value[0].value !== null) {
+    currentFlow = parseFloat(flowTimeSeries.values[0].value[0].value);
+  }
+  
   const currentStage = floodStage.currentStage;
   
-  // Calculate flow trend (increasing/decreasing)
-  const flowValues = flowData[0]?.values || [];
-  const recentFlow = flowValues.slice(-6).map(v => parseFloat(v.value));
+  // Calculate flow trend (increasing/decreasing) using the correct structure
+  const flowValues = flowTimeSeries?.values[0]?.value || [];
+  const recentFlow = flowValues.slice(-6).map(v => parseFloat(v.value)).filter(v => !isNaN(v));
   const flowTrend = recentFlow.length > 1 ? 
     (recentFlow[recentFlow.length - 1] - recentFlow[0]) / recentFlow[0] : 0;
 
-  // Calculate precipitation impact
-  const totalPrecipitation = precipitation.reduce((sum, p) => sum + p.precipitation, 0);
-  const precipitationRisk = totalPrecipitation > 70 ? 'High' : 
-                           totalPrecipitation > 40 ? 'Medium' : 'Low';
-
-  // Determine flood probability
-  let floodProbability = 0;
-  if (currentStage >= floodStage.floodStages.moderate) floodProbability = 90;
-  else if (currentStage >= floodStage.floodStages.minor) floodProbability = 70;
-  else if (currentStage >= floodStage.floodStages.action) floodProbability = 50;
-  else if (flowTrend > 0.2 && precipitationRisk === 'High') floodProbability = 40;
-  else if (flowTrend > 0.1 && precipitationRisk === 'Medium') floodProbability = 25;
-  else floodProbability = 10;
+  // Enhanced flood risk calculation using weighted factors
+  const riskScore = calculateFloodRiskScore(currentStage, floodStage.floodStages, flowTrend, precipitation);
+  
+  // Determine flood probability based on risk score
+  const floodProbability = Math.min(95, Math.max(5, riskScore.probability));
+  
+  // Enhanced time to flood estimation
+  const timeToFlood = estimateTimeToFloodEnhanced(currentStage, floodStage.floodStages, flowTrend, precipitation, riskScore);
+  
+  // Determine risk level based on comprehensive analysis
+  const riskLevel = determineRiskLevel(riskScore, currentStage, floodStage.floodStages);
 
   return {
     riverId: river.id,
     riverName: river.name,
     currentFlow,
     currentStage,
-    flowTrend: flowTrend > 0 ? 'Increasing' : flowTrend < 0 ? 'Decreasing' : 'Stable',
+    flowTrend: flowTrend > 0.05 ? 'Increasing' : flowTrend < -0.05 ? 'Decreasing' : 'Stable',
     floodStage: floodStage.status,
-    precipitationRisk,
+    precipitationRisk: riskScore.precipitationRisk,
     floodProbability,
-    riskLevel: floodProbability >= 70 ? 'High' : 
-               floodProbability >= 40 ? 'Medium' : 'Low',
-    timeToFlood: estimateTimeToFlood(currentStage, flowTrend, precipitationRisk),
-    recommendations: generateRiverRecommendations(floodProbability, currentStage)
+    riskLevel,
+    timeToFlood,
+    riskFactors: riskScore.factors, // New: detailed breakdown
+    recommendations: generateRiverRecommendations(floodProbability, currentStage, riskScore)
   };
+}
+
+// Enhanced flood risk calculation using weighted factors
+function calculateFloodRiskScore(currentStage, floodStages, flowTrend, precipitation) {
+  const factors = {};
+  
+  // 1. River Stage Factor (40% weight) - How close to flood stage
+  const stageRatio = currentStage / floodStages.minor;
+  const stageFactor = Math.min(100, Math.max(0, (stageRatio - 0.5) * 100));
+  factors.stageFactor = Math.round(stageFactor);
+  
+  // 2. Flow Trend Factor (25% weight) - Rate of water level change
+  const trendFactor = flowTrend > 0 ? Math.min(100, flowTrend * 200) : 0;
+  factors.trendFactor = Math.round(trendFactor);
+  
+  // 3. Precipitation Factor (35% weight) - Forecasted rain impact
+  const totalPrecipitation = precipitation.reduce((sum, p) => sum + p.precipitation, 0);
+  const avgPrecipitation = precipitation.length > 0 ? totalPrecipitation / precipitation.length : 0;
+  
+  // Weight precipitation by probability and intensity
+  const precipitationFactor = Math.min(100, (avgPrecipitation * 1.5) + (totalPrecipitation * 0.3));
+  factors.precipitationFactor = Math.round(precipitationFactor);
+  
+  // Determine precipitation risk level
+  let precipitationRisk = 'Low';
+  if (precipitationFactor > 70) precipitationRisk = 'High';
+  else if (precipitationFactor > 40) precipitationRisk = 'Medium';
+  
+  // Calculate weighted risk score
+  const weightedScore = (
+    (stageFactor * 0.40) +      // 40% weight for stage
+    (trendFactor * 0.25) +      // 25% weight for trend
+    (precipitationFactor * 0.35) // 35% weight for precipitation
+  );
+  
+  return {
+    probability: Math.round(weightedScore),
+    stageFactor: factors.stageFactor,
+    trendFactor: factors.trendFactor,
+    precipitationFactor: factors.precipitationFactor,
+    precipitationRisk,
+    factors
+  };
+}
+
+// Enhanced time to flood estimation based on NOAA/NWS hydrological principles
+function estimateTimeToFloodEnhanced(currentStage, floodStages, flowTrend, precipitation, riskScore) {
+  try {
+    // Calculate key hydrological factors
+    const stageRatio = currentStage / floodStages.minor;
+    const precipitationIntensity = precipitation.reduce((sum, p) => sum + p.precipitation, 0) / Math.max(1, precipitation.length);
+    const stageToFlood = floodStages.minor - currentStage;
+    
+    // Immediate flood conditions (already at or above flood stage)
+    if (currentStage >= floodStages.major) return 'Major flooding now';
+    if (currentStage >= floodStages.moderate) return 'Moderate flooding now';
+    if (currentStage >= floodStages.minor) return 'Minor flooding now';
+    
+    // Critical conditions - very high probability of flooding
+    if (currentStage >= floodStages.action) {
+      if (flowTrend > 0.2 && precipitationIntensity > 70) return '1-2 hours';
+      if (flowTrend > 0.15 && precipitationIntensity > 60) return '2-4 hours';
+      if (flowTrend > 0.1 || precipitationIntensity > 50) return '4-8 hours';
+      if (precipitationIntensity > 30) return '8-12 hours';
+      return '12-24 hours';
+    }
+    
+    // High risk conditions - approaching action stage
+    if (stageRatio > 0.8) {
+      if (flowTrend > 0.15 && precipitationIntensity > 60) return '4-8 hours';
+      if (flowTrend > 0.1 && precipitationIntensity > 40) return '8-12 hours';
+      if (flowTrend > 0.05 || precipitationIntensity > 50) return '12-24 hours';
+      if (precipitationIntensity > 20) return '1-2 days';
+      return '2-3 days';
+    }
+    
+    // Moderate risk conditions - significant stage or trend
+    if (stageRatio > 0.6) {
+      if (flowTrend > 0.1 && precipitationIntensity > 50) return '12-24 hours';
+      if (flowTrend > 0.05 && precipitationIntensity > 30) return '1-2 days';
+      if (precipitationIntensity > 60) return '1-3 days';
+      if (flowTrend > 0.02 || precipitationIntensity > 15) return '3-5 days';
+      return '5-7 days';
+    }
+    
+    // Lower risk but still measurable threat
+    if (stageRatio > 0.4) {
+      if (flowTrend > 0.05 && precipitationIntensity > 40) return '1-3 days';
+      if (precipitationIntensity > 50) return '2-4 days';
+      if (flowTrend > 0.02 || precipitationIntensity > 20) return '5-7 days';
+      return '1-2 weeks';
+    }
+    
+    // Very low immediate risk
+    if (riskScore < 15) return 'No immediate threat';
+    if (riskScore < 25) return 'Low threat - monitor weekly';
+    if (riskScore < 35) return 'Monitor conditions daily';
+    
+    // Default for edge cases
+    return 'Monitor conditions';
+  } catch (error) {
+    console.error('[TIME TO FLOOD] Error calculating time to flood:', error);
+    return 'Monitor conditions';
+  }
+}
+
+// Enhanced risk level determination
+function determineRiskLevel(riskScore, currentStage, floodStages) {
+  const stageRatio = currentStage / floodStages.minor;
+  
+  // High risk conditions
+  if (currentStage >= floodStages.moderate || riskScore.probability >= 75) return 'High';
+  if (currentStage >= floodStages.minor && riskScore.trendFactor > 50) return 'High';
+  if (stageRatio > 0.9 && riskScore.precipitationFactor > 60) return 'High';
+  
+  // Medium risk conditions
+  if (currentStage >= floodStages.action || riskScore.probability >= 50) return 'Medium';
+  if (stageRatio > 0.7 && (riskScore.trendFactor > 30 || riskScore.precipitationFactor > 40)) return 'Medium';
+  
+  // Low risk
+  return 'Low';
+}
+
+// Enhanced recommendations based on comprehensive risk analysis
+function generateRiverRecommendations(floodProbability, currentStage, riskScore) {
+  const recommendations = [];
+  
+  if (floodProbability >= 70) {
+    recommendations.push(
+      '⚠️ IMMEDIATE ACTION REQUIRED',
+      'Consider evacuation if in flood-prone areas',
+      'Monitor emergency broadcasts',
+      'Move to higher ground if near river'
+    );
+  } else if (floodProbability >= 50) {
+    recommendations.push(
+      '⚠️ STAY ALERT',
+      'Prepare emergency supplies',
+      'Monitor river levels closely',
+      'Have evacuation plan ready'
+    );
+  } else if (floodProbability >= 30) {
+    recommendations.push(
+      '⚠️ MONITOR CONDITIONS',
+      'Stay informed about weather updates',
+      'Check local flood warnings',
+      'Prepare emergency kit'
+    );
+  } else {
+    recommendations.push(
+      '✅ CONDITIONS NORMAL',
+      'Continue monitoring weather updates',
+      'Stay informed about local conditions'
+    );
+  }
+  
+  // Add specific recommendations based on risk factors
+  if (riskScore.precipitationFactor > 60) {
+    recommendations.push('Heavy rainfall expected - avoid low-lying areas');
+  }
+  if (riskScore.trendFactor > 50) {
+    recommendations.push('River levels rising rapidly - monitor closely');
+  }
+  
+  return recommendations;
 }
 
 // Calculate overall flood risk for the area
@@ -236,9 +417,22 @@ function calculateOverallRisk(riverPredictions, precipitation) {
 
 // Estimate time to flood based on current conditions
 function estimateTimeToFlood(currentStage, flowTrend, precipitationRisk) {
-  if (currentStage >= 15) return 'Immediate';
-  if (currentStage >= 12 && flowTrend > 0.1) return '2-4 hours';
-  if (currentStage >= 10 && precipitationRisk === 'High') return '4-8 hours';
+  // Calculate realistic flood stages for time estimation
+  const calculateFloodStages = (currentStage) => {
+    const baseStage = Math.max(currentStage, 1);
+    return {
+      action: Math.max(1, baseStage * 0.8),
+      minor: Math.max(2, baseStage * 1.2),
+      moderate: Math.max(3, baseStage * 1.5),
+      major: Math.max(4, baseStage * 2.0)
+    };
+  };
+
+  const floodStages = calculateFloodStages(currentStage);
+  
+  if (currentStage >= floodStages.moderate) return 'Immediate';
+  if (currentStage >= floodStages.minor && flowTrend > 0.1) return '2-4 hours';
+  if (currentStage >= floodStages.action && precipitationRisk === 'High') return '4-8 hours';
   if (flowTrend > 0.2 && precipitationRisk === 'High') return '8-12 hours';
   return 'No immediate threat';
 }
@@ -294,6 +488,75 @@ function getWeatherIcon(description) {
   if (desc.includes('thunder')) return '11d';
   if (desc.includes('fog') || desc.includes('mist')) return '50d';
   return '01d';
+}
+
+// Get official NOAA flood stages from NWPS API
+async function getOfficialFloodStages(usgsId) {
+  try {
+    console.log(`[NWPS] Fetching official flood stages for USGS site: ${usgsId}`);
+    
+    const response = await axios.get(`${NWPS_BASE_URL}/gauges`, {
+      params: {
+        'site.usgs': usgsId
+      },
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'RiverApp/1.0'
+      }
+    });
+
+    if (response.data && response.data.features && response.data.features.length > 0) {
+      const gauge = response.data.features[0];
+      const properties = gauge.properties;
+      
+      // Extract official flood stages if available
+      if (properties.floodStages) {
+        const officialStages = {
+          action: properties.floodStages.action || null,
+          minor: properties.floodStages.minor || null,
+          moderate: properties.floodStages.moderate || null,
+          major: properties.floodStages.major || null,
+          source: 'NOAA/NWS Official'
+        };
+        
+        console.log(`[NWPS] Found official flood stages for ${usgsId}:`, officialStages);
+        return officialStages;
+      }
+    }
+    
+    console.log(`[NWPS] No official flood stages found for USGS site: ${usgsId}`);
+    return null;
+  } catch (error) {
+    console.error(`[NWPS] Error fetching official flood stages for ${usgsId}:`, error.message);
+    return null;
+  }
+}
+
+// Calculate fallback flood stages if official ones aren't available
+function calculateFallbackFloodStages(currentStage) {
+  const baseStage = Math.max(currentStage, 1);
+  return {
+    action: Math.max(1, baseStage * 0.8),
+    minor: Math.max(2, baseStage * 1.2),
+    moderate: Math.max(3, baseStage * 1.5),
+    major: Math.max(4, baseStage * 2.0),
+    source: 'Calculated (Fallback)'
+  };
+}
+
+// Get the best available flood stages (official preferred, fallback if needed)
+async function getBestFloodStages(usgsId, currentStage) {
+  // First, try to get official NOAA flood stages
+  const officialStages = await getOfficialFloodStages(usgsId);
+  
+  if (officialStages && officialStages.action && officialStages.minor && 
+      officialStages.moderate && officialStages.major) {
+    return officialStages;
+  }
+  
+  // If official stages aren't available or incomplete, use calculated fallback
+  console.log(`[FLOOD] Using calculated fallback flood stages for USGS site: ${usgsId}`);
+  return calculateFallbackFloodStages(currentStage);
 }
 
 module.exports = router; 

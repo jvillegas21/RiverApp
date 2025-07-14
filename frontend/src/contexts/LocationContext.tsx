@@ -8,10 +8,12 @@ interface Location {
 
 interface LocationContextType {
   location: Location | null;
-  setLocation: (location: Location) => void;
+  setLocation: (location: Location | null) => void;
   getCurrentLocation: () => Promise<void>;
   loading: boolean;
   error: string | null;
+  locationRequired: boolean;
+  setLocationRequired: (required: boolean) => void;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -29,19 +31,54 @@ interface LocationProviderProps {
 }
 
 export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) => {
-  const [location, setLocation] = useState<Location | null>(null);
+  const [location, setLocationState] = useState<Location | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationRequired, setLocationRequiredState] = useState(false);
+
+  // Load location from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('userLocation');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+          setLocationState(parsed);
+        } else {
+          setLocationRequired(true);
+        }
+      } catch {
+        setLocationRequired(true);
+      }
+    } else {
+      setLocationRequired(true);
+    }
+  }, []);
+
+  // Save location to localStorage whenever it changes
+  useEffect(() => {
+    if (location) {
+      localStorage.setItem('userLocation', JSON.stringify(location));
+    }
+  }, [location]);
+
+  const setLocation = (loc: Location | null) => {
+    setLocationState(loc);
+    if (loc) {
+      localStorage.setItem('userLocation', JSON.stringify(loc));
+    } else {
+      localStorage.removeItem('userLocation');
+    }
+  };
 
   const getCurrentLocation = async () => {
     setLoading(true);
     setError(null);
-    
     try {
       if (!navigator.geolocation) {
+        setLocationRequired(true);
         throw new Error('Geolocation is not supported by this browser');
       }
-
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
@@ -49,24 +86,23 @@ export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) 
           maximumAge: 300000 // 5 minutes
         });
       });
-
       const newLocation: Location = {
         lat: position.coords.latitude,
         lng: position.coords.longitude
       };
-
       setLocation(newLocation);
+      setLocationRequired(false); // Clear the requirement when location is obtained
     } catch (err) {
+      setLocationRequired(true); // Set requirement when geolocation fails
       setError(err instanceof Error ? err.message : 'Failed to get location');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    // Try to get location on app start
-    getCurrentLocation();
-  }, []);
+  const setLocationRequired = (required: boolean) => {
+    setLocationRequiredState(required);
+  };
 
   return (
     <LocationContext.Provider value={{
@@ -74,7 +110,9 @@ export const LocationProvider: React.FC<LocationProviderProps> = ({ children }) 
       setLocation,
       getCurrentLocation,
       loading,
-      error
+      error,
+      locationRequired,
+      setLocationRequired
     }}>
       {children}
     </LocationContext.Provider>
