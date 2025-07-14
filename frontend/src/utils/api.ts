@@ -144,7 +144,19 @@ class ApiClient {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        return response.data;
+        // Ensure response has the expected structure
+        if (response.data && typeof response.data === 'object') {
+          return response.data;
+        } else {
+          // If response doesn't match expected format, create a standardized response
+          return {
+            success: true,
+            data: response.data,
+            message: null,
+            error: null,
+            timestamp: new Date().toISOString()
+          };
+        }
       } catch (error: any) {
         lastError = error;
 
@@ -173,8 +185,15 @@ class ApiClient {
       activeRequests.delete(requestKey);
     }
 
-    // Transform error to standardized format
-    throw this.transformError(lastError);
+    // Transform error to standardized format and wrap in ApiResponse format
+    const transformedError = this.transformError(lastError);
+    return {
+      success: false,
+      data: null,
+      message: transformedError.message,
+      error: transformedError,
+      timestamp: new Date().toISOString()
+    };
   }
 
   /**

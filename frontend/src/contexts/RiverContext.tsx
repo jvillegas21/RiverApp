@@ -169,7 +169,8 @@ export const RiverProvider: React.FC<RiverProviderProps> = ({ children }) => {
         if (predictionResponse.success && predictionResponse.data) {
           setFloodPredictions(predictionResponse.data.rivers || []);
         } else {
-          console.warn('Flood prediction failed:', predictionResponse.error);
+          const errorMessage = predictionResponse.error?.message || 'Unknown error occurred';
+          console.warn('Flood prediction failed:', errorMessage, predictionResponse.error);
           setFloodPredictions([]); // Still show rivers even if predictions fail
         }
       } else {

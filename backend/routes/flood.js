@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const { sendSuccess, sendError, ERROR_CODES } = require('../utils/apiResponse');
+const { validateCoordinates, validateRadius, validateRequestBody } = require('../utils/validation');
 
 // USGS Water Services API
 const USGS_BASE_URL = 'https://waterservices.usgs.gov/nwis';
@@ -10,7 +12,39 @@ const NWPS_BASE_URL = 'https://api.water.noaa.gov/nwps/v1';
 // Flood prediction and risk assessment
 router.post('/predict', async (req, res) => {
   try {
-    const { lat, lng, radius, rivers } = req.body;
+    // Validate request body
+    const schema = {
+      required: ['lat', 'lng', 'radius', 'rivers'],
+      fields: {
+        lat: { type: 'number' },
+        lng: { type: 'number' },
+        radius: { type: 'number' },
+        rivers: { type: 'array' }
+      }
+    };
+    
+    const bodyValidation = validateRequestBody(req.body, schema);
+    if (!bodyValidation.isValid) {
+      return sendError(res, 'Invalid request data', ERROR_CODES.VALIDATION_ERROR, bodyValidation.errors, 400);
+    }
+    
+    const { lat, lng, radius, rivers } = bodyValidation.data;
+    
+    // Validate coordinates and radius
+    const coordValidation = validateCoordinates(lat, lng);
+    const radiusValidation = validateRadius(radius);
+    
+    if (!coordValidation.isValid) {
+      return sendError(res, 'Invalid coordinates', ERROR_CODES.VALIDATION_ERROR, coordValidation.errors, 400);
+    }
+    
+    if (!radiusValidation.isValid) {
+      return sendError(res, 'Invalid radius', ERROR_CODES.VALIDATION_ERROR, radiusValidation.errors, 400);
+    }
+    
+    const latNum = coordValidation.lat;
+    const lngNum = coordValidation.lng;
+    const radiusNum = radiusValidation.value;
     
     // Get current weather from NOAA/NWS
     let weatherResponse;
@@ -176,15 +210,30 @@ router.post('/predict', async (req, res) => {
     // Calculate overall flood risk for the area
     const overallRisk = calculateOverallRisk(floodPredictions, precipitationData);
 
-    res.json({
+    const floodPredictionResult = {
       rivers: floodPredictions,
       overallRisk,
       weather: weatherResponse.data,
       recommendations: generateRecommendations(overallRisk, floodPredictions)
-    });
+    };
+
+    const meta = {
+      coordinates: { lat: latNum, lng: lngNum },
+      radius: radiusNum,
+      riversAnalyzed: rivers.length,
+      dataSource: 'USGS + NOAA/NWS + NWPS'
+    };
+
+    return sendSuccess(res, floodPredictionResult, 'Flood prediction completed', meta);
   } catch (error) {
     console.error('Flood prediction error:', error.message);
-    res.status(500).json({ error: 'Failed to generate flood prediction' });
+    if (error.message && error.message.includes('fetch data for river')) {
+      return sendError(res, 'Failed to fetch data for one or more rivers', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 502);
+    } else if (error.message && error.message.includes('weather data')) {
+      return sendError(res, 'Failed to fetch weather data for prediction', ERROR_CODES.EXTERNAL_API_ERROR, error.message, 502);
+    } else {
+      return sendError(res, 'Failed to generate flood prediction', ERROR_CODES.GENERAL_ERROR, error.message, 500);
+    }
   }
 });
 
